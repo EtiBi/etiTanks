@@ -77,6 +77,13 @@
 				map = map.filter(x=>x.id!==item.id);
 			});
 		});
+		socket.on("died", function(item, index){
+			window.removeEventListener("keydown", keyDownHandler);
+			window.removeEventListener("keyup", keyUpHandler);
+			window.removeEventListener("mousedown", mouseDownHandler);
+			window.removeEventListener("mouseup", mouseUpHandler);
+			window.removeEventListener("mousemove", rotateTurret);
+		});
 		socket.on("newPlayersPos", function(players, bullets){
 			//console.log("players: ", players);
 			updateGame(players, bullets)

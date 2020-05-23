@@ -55,9 +55,10 @@ function updateBullets(deltaTime){
 		var yAdd = Math.sin(bullets[i].angle)*deltaTime*bulletSpeed;
 		var d = false;
 		Object.keys(players).forEach(function(item, index){
-			var tankBorders = [players[item].xPos-tankWidth, players[item].yPos-tankSize, players[item].xPos, players[item].yPos-tankSize, players[item].xPos, players[item].yPos, players[item].xPos-tankWidth, players[item].yPos, players[item].xPos-tankWidth, players[item].yPos-tankSize];
-			if(lineclip([[bullets[i].xPos, bullets[i].yPos], [bullets[i].xPos+xAdd, bullets[i].yPos+yAdd]], [item.x, item.y, item.width+item.x, item.height+item.y]).length !== 0){
-				console.log(tankBorders)
+			var tankBorders = [players[item].xPos-tankWidth, players[item].yPos-tankSize, players[item].xPos, players[item].yPos];
+			if(lineclip([[bullets[i].xPos, bullets[i].yPos], [bullets[i].xPos+xAdd, bullets[i].yPos+yAdd]], tankBorders).length !== 0){
+				players[item].health--;
+				d=true;
 			}
 		});
 		map.filter(x=>x.type == "wall"||x.type == "woodWall").forEach(function(item, index){
@@ -145,6 +146,11 @@ function update(){
 		io.to("gameRoom").emit("removeFromMap", map.filter(x=>x.breakable&&x.hp<=0));
 		map = map.filter(x=>!(x.breakable&&x.hp<=0));
 	}
+	var filterPlayers = Object.entries(players).filter(x=>x[1].health<=0);
+	filterPlayers.forEach(function(item, index){
+		io.to(item[0]).emit("died");
+		delete players[item[0]]
+	});
 	previousTime = Date.now();
 }
 io.on('connection', function(socket){
