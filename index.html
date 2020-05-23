@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Tanks!</title>
+	<link href="https://fonts.googleapis.com/css2?family=Chelsea+Market&display=swap" rel="stylesheet">
+	<script src="/socket.io/socket.io.js"></script>
+	<link rel="stylesheet" href="/main.css">
+</head>
+<body onload="loaded();">
+	<canvas id="gameArea"></canvas>
+	<div class="main">
+		<div id="playersCont">
+			<b>Players:</b>
+			<ul id="playersList">
+
+			</ul>
+		</div>
+		<div id="gameFull" style="display: none;">
+			<h1>Sorry, this game is full</h1>
+		</div>
+		<div id="gameStarted" style="display: none;">
+			<h1>Sorry, this game has already started</h1>
+		</div>
+		<div id="userInfo" style="display: none;">
+			<h1>Welcome!</h1>
+			<p>
+				The host will start the game.
+			</p>
+			<label for="name">Name: </label><input type="text" value="Bob" oninput="updateName(this.value);" name="name" id="nameInput">
+			<br>
+			<label for="color">Color: </label><input type="color" id="colorInput" onchange="updateColor(this.value)" value="#0000ff">
+		</div>
+		<div id="hostOnly" style="display: none;">
+			<h3>You are host!</h3>
+			<button onclick="startGame();">Start game</button>
+		</div>
+	</div>
+	<script>
+		var socket = io("ws://192.168.2.205:2828", {transports: ['websocket']});
+		var canvas = document.querySelector("#gameArea");
+		var ctx = canvas.getContext("2d");
+		var sizeConverter = 1;
+		const wallTextureSize = 150;
+		var woodWall = new Image();
+		woodWall.src = '/woodWall.jpg';
+		var bushTexture = new Image();
+		bushTexture.src = '/bush-small.png';
+		var groundTexture = new Image();
+		groundTexture.src = '/groundTexture.jpg';
+		var wallTexture = new Image(wallTextureSize, wallTextureSize);
+		wallTexture.src = '/wall.jpg';
+		var tankSize = 30;
+		var tankImg = new Image(tankSize, tankSize);
+		tankImg.src = '/tank.png';
+		var turretImg = new Image();
+		turretImg.src = '/turret.png';
+		var map;
+		var previousY = 0;
+		var previousX = 0;
+		window.addEventListener("resize", resize);
+		function resize(){
+			canvas.width = window.innerWidth;
+			canvas.height = window.innerWidth/2;
+			sizeConverter = window.innerWidth/4000;
+			tankSize = 50 * sizeConverter;
+		}
+		function loaded(){
+			resize();
+			//drawWall(0, 0, window.innerWidth, canvas.heightds
+		}
+		var playerPos;
+		socket.on("removeFromMap", function(removeItems){
+			console.log("hi", removeItems)
+			removeItems.forEach(function(item, index){
+				map = map.filter(x=>x.id!==item.id);
+			});
+		});
+		socket.on("newPlayersPos", function(players, bullets){
+			//console.log("players: ", players);
+			updateGame(players, bullets)
+		});
+		function updateGame(players, bullets){
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			parseMapData(map);
+			if(playerPos === undefined){
+				playerPos = {...players};
+			}
+			var fakePlayers = {...players};
+			Object.keys(players).forEach(element => {
+				//console.log("Math.atan2: ", Math.atan2(playerPos[element].yPos-players[element].yPos, playerPos[element].xPos-players[element].xPos));
+				drawTank(players[element].xPos*sizeConverter, players[element].yPos*sizeConverter, players[element].tankRotation, players[element].turretRotation, players[element].name, players[element].color, players[element].health, players[element].maxHealth);
+			});
+			bullets.forEach(function(item, index){
+				//console.log("item: ", item);
+				ctx.beginPath()
+				ctx.fillStyle = "#ff0000";
+				ctx.arc(item.xPos*sizeConverter, item.yPos*sizeConverter, 3, 0, Math.PI*2);
+				ctx.fill();
+				ctx.closePath();
+			});
+			parseMapDataTop(map);
+			playerPos = fakePlayers;
+		}
+		socket.on("gameFull", function(){
+			document.querySelector("#gameFull").style.display = "block";
+		});
+		socket.on("initYourself", function(){
+			document.querySelector("#userInfo").style.display = "block";
+		});
+		function startGame(){
+			socket.emit("startGame");
+		}
+		socket.on("host", function(){
+			document.querySelector("#hostOnly").style.display = "block";
+		})
+		socket.on("gameAlreadyStarted", function(){
+			document.querySelector("#gameStarted").style.display = "block";
+		});
+		function updateColor(newColor){
+			console.log("newColor: ", newColor);
+			socket.emit("changeColor", newColor);
+		}
+		function updateName(newName){
+			socket.emit("changeName", newName);
+		}
+		socket.on("updatePlayers", function(newPlayers){
+			document.querySelector("#playersList").innerHTML = "";
+			Object.values(newPlayers).forEach(element => {
+				document.querySelector("#playersList").innerHTML += `<li style="color: ${element.color};">${element.name}</li>`;
+			});
+		});
+		socket.on("startGame", function(mapInfo){
+			console.log("start");
+			document.querySelector("#userInfo").style.display = "none";
+			document.querySelector("#hostOnly").style.display = "none";
+			map = mapInfo;
+			parseMapData(map);
+			parseMapDataTop(map)
+			window.addEventListener("keydown", keyDownHandler);
+			window.addEventListener("keyup", keyUpHandler);
+			window.addEventListener("mousedown", mouseDownHandler);
+			window.addEventListener("mouseup", mouseUpHandler);
+			window.addEventListener("mousemove", rotateTurret);
+		});
+		function keyDownHandler(event){
+			//console.log("event: ", event);
+			switch(event.code){
+				case "ArrowLeft":
+				case "KeyA":
+					if(!event.repeat){
+						socket.emit("moveLeft", true);
+					}
+					var yourTank = playerPos[socket.id];
+					//console.log(event)
+					if(yourTank != undefined){
+						var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-previousY, yourTank.xPos*sizeConverter-tankSize*1.865/2-previousX)-Math.PI/2;
+						socket.emit("changeTurretAngle", calcAngle);
+					}
+					break;
+				case "ArrowUp":
+				case "KeyW":
+					if(!event.repeat){
+						socket.emit("moveForward", true);
+					}
+					var yourTank = playerPos[socket.id];
+					//console.log(event)
+					if(yourTank != undefined){
+						var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-previousY, yourTank.xPos*sizeConverter-tankSize*1.865/2-previousX)-Math.PI/2;
+						socket.emit("changeTurretAngle", calcAngle);
+					}
+					break;
+				case "ArrowDown":
+				case "KeyS":
+					if(!event.repeat){
+						socket.emit("moveBack", true);
+					}
+					var yourTank = playerPos[socket.id];
+					//console.log(event)
+					if(yourTank != undefined){
+						var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-previousY, yourTank.xPos*sizeConverter-tankSize*1.865/2-previousX)-Math.PI/2;
+						socket.emit("changeTurretAngle", calcAngle);
+					}
+					break;
+				case "ArrowRight":
+				case "KeyD":
+					if(!event.repeat){
+						socket.emit("moveRight", true);
+					}
+					var yourTank = playerPos[socket.id];
+					//console.log(event)
+					if(yourTank != undefined){
+						var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-previousY, yourTank.xPos*sizeConverter-tankSize*1.865/2-previousX)-Math.PI/2;
+						socket.emit("changeTurretAngle", calcAngle);
+					}
+					break;
+			}
+		}
+		function keyUpHandler(event){
+			switch(event.code){
+				case "ArrowLeft":
+				case "KeyA":
+					socket.emit("moveLeft", false);
+					break;
+				case "ArrowUp":
+				case "KeyW":
+					socket.emit("moveForward", false);
+					break;
+				case "ArrowDown":
+				case "KeyS":
+					socket.emit("moveBack", false);
+					break;
+				case "ArrowRight":
+				case "KeyD":
+					socket.emit("moveRight", false);
+					break;
+			}
+		}
+		function mouseDownHandler(event){
+			socket.emit("shooting", true);
+		}
+		function mouseUpHandler(event){
+			socket.emit("shooting", false);
+		}
+		function rotateTurret(event){
+			var yourTank = playerPos[socket.id];
+			//console.log(event)
+			previousX = event.clientX;
+			previousY = event.clientY;
+			if(yourTank != undefined){
+				
+				var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-event.clientY, yourTank.xPos*sizeConverter-tankSize*1.865/2-event.clientX)-Math.PI/2;
+				//console.log(calcAngle)
+				socket.emit("changeTurretAngle", calcAngle);
+			}
+		}
+		function parseMapData(mapData){
+			mapData.forEach(function(item, index){
+				switch(item.type){
+					case "bg":
+						drawTexture(groundTexture, 0, 0, canvas.width, canvas.height, 225)
+						break;
+					case "wall":
+						drawWall(item.x*sizeConverter, item.y*sizeConverter, item.width*sizeConverter, item.height*sizeConverter);
+						break;
+					case "woodWall":
+						drawTexture(woodWall, item.x*sizeConverter, item.y*sizeConverter, item.width*sizeConverter, item.height*sizeConverter, 100);
+						break;
+				}
+			});
+		}
+		function parseMapDataTop(mapData){
+			mapData.forEach(function(item, index){
+				switch(item.type){
+					case "bush":
+						ctx.drawImage(bushTexture, (item.x-200)*sizeConverter, (item.y-200)*sizeConverter, 400*sizeConverter, 400*sizeConverter);
+						break;
+				}
+			});
+		}
+		function drawWall(xPos, yPos, width, height){// width/texturesize-i
+			//drawTexture(wallTexture, 0, 0, width, height, wallTextureSize)
+			//console.log("drawTexture("+wallTexture+", 0, 0, "+ width+", "+ height+","+ wallTextureSize,")")
+			for(var i = 0;i<Math.ceil(width/wallTextureSize);i++){
+				for(var j = 0;j<Math.ceil(height/wallTextureSize);j++){
+					var calcW = i+1!==Math.ceil(width/wallTextureSize)?wallTextureSize:(width-i*wallTextureSize);
+					var calcH = j+1!==Math.ceil(height/wallTextureSize)?wallTextureSize:(height-j*wallTextureSize);
+					ctx.drawImage(wallTexture, 0, 0, calcW, calcH, xPos+wallTextureSize*i, yPos+wallTextureSize*j, calcW, calcH);
+				}
+			}
+		}
+		function drawTexture(image, xPos, yPos, width, height, texturesize){
+			for(var i = 0;i<Math.ceil(width/texturesize);i++){
+				for(var j = 0;j<Math.ceil(height/texturesize);j++){
+					var calcW = i+1!==Math.ceil(width/texturesize)?texturesize:(width-i*texturesize);
+					var calcH = j+1!==Math.ceil(height/texturesize)?texturesize:(height-j*texturesize);
+					ctx.drawImage(image, 0, 0, calcW, calcH, xPos+texturesize*i, yPos+texturesize*j, calcW, calcH);
+				}
+			}
+		}
+		function drawTank(xPos, yPos, tankRotation, turretRotation, name, color, health, maxHealth){
+			var percentage = health/maxHealth;
+			console.log("percentage: ", percentage);
+			var barLength = percentage*40;
+			console.log("barLength: ", barLength);
+			ctx.fillStyle = "red";
+			ctx.fillRect(xPos-tankSize-20, yPos+5, 40, 3);
+			ctx.fillStyle = "green";
+			ctx.fillRect(xPos-tankSize-20, yPos+5, barLength, 3);
+			ctx.fillStyle = color;
+			ctx.textAlign = "center";
+			ctx.font = "15px 'Chelsea Market', cursive";
+			ctx.fillText(name, xPos-tankSize, yPos+tankSize+10*sizeConverter)
+			ctx.save();
+			ctx.translate(xPos-tankSize*1.865/2, yPos-tankSize/2);
+			ctx.rotate(tankRotation);
+			//ctx.beginPath();
+			//ctx.moveTo(-tankSize*1.865/2, -tankSize/2);
+			//ctx.arc(-tankSize*1.865/2, -tankSize/2, 10, 0, Math.PI*2);
+			//ctx.fillStyle = "red";
+			//ctx.fill();
+			ctx.drawImage(tankImg, -tankSize*1.865/2, -tankSize/2, tankSize*1.865, tankSize);
+			ctx.restore();
+			ctx.save();
+			//ctx.endPath()
+			
+			ctx.translate(xPos-tankSize*1.865/1.8, yPos-tankSize/2);
+
+			ctx.rotate(turretRotation);
+			ctx.drawImage(turretImg, -tankSize/2, -tankSize*(793/386)/2-10, tankSize, tankSize*(793/386));
+			ctx.restore();
+		}
+		document.querySelector(".main").onclick = function(event){
+			console.log("X: ", event.clientX/sizeConverter, "y: ", event.clientY/sizeConverter)
+		}
+		socket.on("drawLines", function(){
+			drawLines(arguments);
+		})
+		function drawLines(){
+			console.log(Object.values(arguments[0])[0])
+			var poses = Object.values(arguments[0])[0];
+			ctx.beginPath();
+			ctx.moveTo(poses[0][0]*sizeConverter, poses[0][1]*sizeConverter);
+			ctx.strokeStyle = "#ff0000";
+			ctx.lineWidth = 1;
+			poses.forEach(function(item, index){
+				console.log(item[0]*sizeConverter," : ", item[1]*sizeConverter)
+				ctx.lineTo(item[0]*sizeConverter, item[1]*sizeConverter);
+				
+			});ctx.stroke();
+			ctx.closePath();
+		}
+	</script>
+</body>
+</html>

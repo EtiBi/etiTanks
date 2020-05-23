@@ -1,0 +1,38 @@
+body{
+	margin: 0px;
+	padding: 0px;
+	height: 100vh;
+	background-color: black;
+	color: whitesmoke;
+	font-family: 'Chelsea Market', cursive;
+}
+.main{
+	position: absolute;
+	left: 0px;
+	top: 0px;
+	height: 100%;
+	width: 100%;
+	text-align: center;
+	-webkit-touch-callout: none; /* iOS Safari */
+    -webkit-user-select: none; /* Safari */
+     -khtml-user-select: none; /* Konqueror HTML */
+       -moz-user-select: none; /* Old versions of Firefox */
+        -ms-user-select: none; /* Internet Explorer/Edge */
+            user-select: none; /* Non-prefixed version, currently
+                                  supported by Chrome, Edge, Opera and Firefox */
+}
+#playersCont{
+	position: fixed;
+	top: 10px;
+	left: 10px;
+	color: red;
+}
+#playersCont ul{
+	padding-left: 20px;
+}
+#playersCont b{
+	text-align: center;
+}
+button, input{
+	font-family: 'Chelsea Market', cursive;
+}

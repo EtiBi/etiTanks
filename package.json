@@ -1,0 +1,17 @@
+{
+  "name": "etitanks",
+  "version": "1.0.0",
+  "description": "Fight with tanks online!",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Etienne Bibaud",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.17.1",
+    "http": "0.0.1-security",
+    "lineclip": "^1.1.5",
+    "socket.io": "^2.3.0"
+  }
+}
