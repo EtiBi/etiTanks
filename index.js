@@ -13,7 +13,7 @@ function randomBetween(min,max){
 	return Math.floor(Math.random()*max-min)+min;
 }
 var players = {};
-const spawnPoints = [{x: 500, y: 500}, {x: 3700, y: 500}, {x: 100, y: 190}, {x: 1000, y: 1000}];
+const spawnPoints = [{x: 500, y: 500}, {x: 3700, y: 500}, {x: 300, y: 1500}, {x: 1000, y: 1000}];
 var spawnPointsLeft = spawnPoints.slice();
 const maxPlayers = 4;
 var gameState = "wait";
@@ -22,7 +22,7 @@ var updateInt;
 var deltaTime = 0;
 var previousTime = Date.now();
 var previousPlayers = "";
-const tankSize = 50;
+const tankSize = 70;
 const tankWidth = tankSize*1.865;
 var speedMultiplier = 0.5;
 const bloomDeg = 0.18;
@@ -97,8 +97,8 @@ function update(){
 	Object.keys(players).forEach(function(item, index){
 		if(players[item].shooting){
 			var bulletDir = players[item].turretRotation-Math.PI/2 + Math.random() * (bloomDeg + bloomDeg) - bloomDeg;
-			var bulletX = Math.cos(players[item].turretRotation-Math.PI/2)*75+players[item].xPos-50;
-			var bulletY = Math.sin(players[item].turretRotation-Math.PI/2)*75+players[item].yPos-25;
+			var bulletX = Math.cos(players[item].turretRotation-Math.PI/2)*100+players[item].xPos-75;
+			var bulletY = Math.sin(players[item].turretRotation-Math.PI/2)*100+players[item].yPos-30;
 			bullets.push({angle: bulletDir, xPos: bulletX, yPos: bulletY, startX: bulletX, startY: bulletY, distance: randomBetween(600, 1000)})
 		}
 		if(players[item].moveLeft){
@@ -149,8 +149,13 @@ function update(){
 	var filterPlayers = Object.entries(players).filter(x=>x[1].health<=0);
 	filterPlayers.forEach(function(item, index){
 		io.to(item[0]).emit("died");
-		delete players[item[0]]
+		delete players[item[0]];
 	});
+	if(Object.keys(players).length === 1){
+
+	}else if(Object.keys(players).length === 1){
+		//d
+	}
 	previousTime = Date.now();
 }
 io.on('connection', function(socket){

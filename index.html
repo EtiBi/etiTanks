@@ -51,7 +51,7 @@
 		groundTexture.src = '/groundTexture.jpg';
 		var wallTexture = new Image(wallTextureSize, wallTextureSize);
 		wallTexture.src = '/wall.jpg';
-		var tankSize = 30;
+		var tankSize = 50;
 		var tankImg = new Image(tankSize, tankSize);
 		tankImg.src = '/tank.png';
 		var turretImg = new Image();
@@ -64,7 +64,7 @@
 			canvas.width = window.innerWidth;
 			canvas.height = window.innerWidth/2;
 			sizeConverter = window.innerWidth/4000;
-			tankSize = 50 * sizeConverter;
+			tankSize = 70 * sizeConverter;
 		}
 		function loaded(){
 			resize();
