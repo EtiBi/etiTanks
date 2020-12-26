@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Map editor</title>
+	<link href="https://fonts.googleapis.com/css2?family=Chelsea+Market&display=swap" rel="stylesheet">
+	<script src="/socket.io/socket.io.js"></script>
+	<link rel="stylesheet" href="/mapEditor.css">
+</head>
+<body onload="loaded();">
+	<div id="editor">
+
+	</div>
+	<div id="bottomBar">
+		<div id="tools">
+			<button onclick="exportMap()">export</button>
+		</div>
+		<div id="layerOptions">
+			<div>
+				x: <input type="number" id="xOption" oninput="changeX(this.value);">
+			</div>
+			<div>
+				y: <input type="number" id="yOption" oninput="changeY(this.value);">
+			</div>
+			<div>
+				tile: <input type="checkbox" id="tileOption" oninput="changeTile(this.checked);" checked>
+			</div>
+			<div>
+				Width: <input type="number" id="widthOption" oninput="changeWidth(this.value);">
+			</div>
+			<div>
+				Height: <input type="number" id="heightOption" oninput="changeHeight(this.value);">
+			</div>
+			<div>
+				Brakable: <input type="checkbox" id="breakableOption" oninput="changeBreakable(this.checked);">
+			</div>
+			<div>
+				Hp: <input type="number" id="hpOption" oninput="changeHp(this.value);">
+			</div>
+			<div>
+				<button onclick="deleteObj()">Delete object</button>
+			</div>
+		</div>
+	</div>
+	<script>
+		var editorDiv = document.querySelector("#editor");
+		var tools = document.querySelector("#tools");
+		var layerOptions = document.querySelector("#layerOptions");
+		var currentId = 0;
+		var sizeConverter;
+		var xOption = document.querySelector("#xOption");
+		var yOption = document.querySelector("#yOption");
+		var tileOption = document.querySelector("#tileOption");
+		var widthOption = document.querySelector("#widthOption");
+		var heightOption = document.querySelector("#heightOption");
+		var breakableOption = document.querySelector("#breakableOption");
+		var hpOption = document.querySelector("#hpOption");
+		var selected = "";
+		var clipDistance = 7;
+		window.addEventListener("resize", resize);
+		window.addEventListener("mousedown", mouseDownHandler);
+		window.addEventListener("keydown", keyPressHandler);
+		function keyPressHandler(event){
+			console.log(event)
+			if(event.code == "KeyC"){
+				console.log("document.querySelector(#obj+selected): ", document.querySelector("#obj"+selected));
+				if(document.querySelector("#obj"+selected)!==undefined){
+					clip(document.querySelector("#obj"+selected))
+				}
+			}
+			if(event.code == "KeyD" && event.ctrlKey){
+				if(document.querySelector("#obj"+selected)!==undefined){
+					var clone = document.querySelector("#obj"+selected).cloneNode(true);
+					clone.id = "obj"+currentId;
+					clone.setAttribute("data-id", currentId);
+					new dragElement(clone, false);
+					editorDiv.appendChild(clone);
+					currentId++;
+				}
+				event.preventDefault()
+			}
+		}
+		function changeX(toVal){
+			document.querySelector("#obj"+selected).style.left = toVal*sizeConverter+"px";
+		}
+		function changeY(toVal){
+			document.querySelector("#obj"+selected).style.top = toVal*sizeConverter+"px";
+		}
+		function changeTile(toVal){
+			
+			document.querySelector("#obj"+selected).setAttribute("data-tileOption", toVal);
+			if(!toVal){
+				console.log(toVal);
+				document.querySelector("#obj"+selected).firstChild.style.width = "100%";
+				document.querySelector("#obj"+selected).firstChild.style.height = "100%";
+			}
+		}
+		function changeWidth(toVal){
+			document.querySelector("#obj"+selected).style.width = toVal*sizeConverter+"px";
+		}
+		function changeHeight(toVal){
+			document.querySelector("#obj"+selected).style.height = toVal*sizeConverter+"px";
+		}
+		function changeBreakable(toVal){
+			document.querySelector("#obj"+selected).setAttribute("data-breakable", toVal);
+		}
+		function changeHp(toVal){
+			document.querySelector("#obj"+selected).setAttribute("data-hp", toVal);
+		}
+		function deleteObj(){
+			document.querySelector("#obj"+selected).remove();
+		}
+		function sliceImage(image, startX, startY, endX, endY){
+			var canvas = document.createElement("canvas");
+			var ctx = canvas.getContext("2d");
+			canvas.width = endX-startX;
+			canvas.height = endY-startY;
+			ctx.drawImage(image, startX, startY, endX-startX, endY-startY, 0, 0, endX-startX, endY-startY);
+			return canvas.toDataURL();
+		}
+		function mouseDownHandler(e){
+			// if(e.target.tagName !="IMG"){
+			// 	Array.from(document.querySelectorAll(".selected")).forEach(x=>{
+			// 		x.classList.remove("selected");
+			// 	});
+			// 	selected = "";
+			// }
+		}
+		function resize(){
+			editorDiv.style.width = window.innerWidth/3*2+"px";
+			editorDiv.style.height = window.innerWidth/3+"px";
+			sizeConverter = window.innerWidth/4000/3*2;
+		}
+		var images = [{name:'woodWall', url: '/woodWall.jpg'}, {name:'bushTexture', url: '/bush-small.png'}, {name:'groundTexture', url:'/groundTexture.jpg'}, {name:'wallTexture', url: '/wall.jpg'}, {name:'crate', url: '/crate.jpg'}];
+		function addImage(item){
+			var div = document.createElement("DIV");
+			div.classList.add("tool");
+			new dragElement(item.image, true);
+			item.image.name = item.name;
+			div.append(item.image);
+			tools.appendChild(div);
+		}
+		function loaded(){
+			resize();
+			images.forEach(item=>{
+				item.image = new Image();
+				item.image.onload = addImage(item);
+				item.image.src = item.url;
+				item.image.style.maxWidth = "100px";
+				item.image.style.maxHeight = "100px";
+			});
+		}
+		function select(obj){
+			Array.from(document.querySelectorAll(".selected")).forEach(x=>{
+				x.classList.remove("selected");
+			});
+			obj.classList.add("selected");
+			selected = obj.getAttribute("data-id");
+			changeOption(obj)
+		}
+		function changeOption(obj){
+			xOption.value = obj.offsetLeft/sizeConverter;
+			yOption.value = obj.offsetTop/sizeConverter;
+			tileOption.checked = obj.getAttribute("data-tileOption");
+			widthOption.value = obj.getBoundingClientRect().width/sizeConverter;
+			heightOption.value = obj.getBoundingClientRect().height/sizeConverter;
+			breakableOption.checked = obj.getAttribute("data-breakable");
+			hpOption.value = obj.getAttribute("data-hp");
+		}
+		class dragElement{
+			constructor(elmnt, clone){
+				this.pos1 = 0, this.pos2 = 0, this.pos3 = 0, this.pos4 = 0, this.elmnt = elmnt, this.clone = clone;
+				var classSave = this;
+				elmnt.addEventListener("mousedown", function(e){classSave.dragMouseDown(e)});
+			}
+
+			dragMouseDown(e) {
+				e = e || window.event;
+				e.preventDefault();
+				// get the mouse cursor position at startup:
+				if(this.clone){
+					this.moveElmnt = this.elmnt.cloneNode();
+					var div = document.createElement("div");
+					div.appendChild(this.moveElmnt)
+					this.moveElmnt.style.maxWidth = "none";
+					this.moveElmnt.style.maxHeight = "none";
+					this.moveElmnt.style.width = "100%";
+					this.moveElmnt.style.height = "100%";
+					div.name = this.moveElmnt.name;
+					this.moveElmnt = div;
+					editorDiv.appendChild(div);
+					this.moveElmnt.style.position = "absolute";
+					this.moveElmnt.style.top = this.elmnt.offsetTop+"px";
+					this.moveElmnt.style.left = this.elmnt.offsetLeft+"px";
+					this.moveElmnt.style.width = 200*sizeConverter+"px";
+					this.moveElmnt.style.height = 200*sizeConverter+"px";
+					this.moveElmnt.id = "obj"+currentId;
+					this.moveElmnt.setAttribute("data-id", currentId);
+					this.moveElmnt.setAttribute("data-breakable", "false");
+					new dragElement(this.moveElmnt, false);
+					currentId++;
+				}else{
+					this.moveElmnt = this.elmnt;
+				}
+				select(this.moveElmnt);
+				this.pos3 = e.clientX;
+				this.pos4 = e.clientY;
+				this.mouseClipDistanceX = 0;
+				this.mouseClipDistanceY = 0;
+				var classSave = this;
+				document.addEventListener("mouseup", classSave.mouseupSave = function(e){classSave.closeDragElement(e)});
+				// call a function whenever the cursor moves:
+				this.mousemoveSave;
+				var classSave = this;
+				document.addEventListener("mousemove", classSave.mousemoveSave = function(e){classSave.elementDrag(e)});
+			}
+			elementDrag(e) {
+				//alert();
+				e = e || window.event;
+				e.preventDefault();
+				// calculate the new cursor position:
+				this.pos1 = this.pos3 - e.clientX;
+				this.pos2 = this.pos4 - e.clientY;
+				this.pos3 = e.clientX;
+				this.pos4 = e.clientY;
+				// set the element's new position:
+				var topPos = (this.moveElmnt.offsetTop - this.pos2)>0?(this.moveElmnt.offsetTop - this.pos2):0;
+				var leftPos = (this.moveElmnt.offsetLeft - this.pos1)>0?(this.moveElmnt.offsetLeft - this.pos1):0;
+				
+				this.moveElmnt.style.top = topPos + "px";
+				this.moveElmnt.style.left = leftPos + "px";
+				changeOption(this.moveElmnt)
+			}
+			closeDragElement() {
+				// stop moving when mouse button is released:
+				var classSave = this;
+				document.removeEventListener("mouseup", classSave.mouseupSave);
+				document.removeEventListener("mousemove",  classSave.mousemoveSave);
+			}
+		}
+		function exportMap(){
+			var map = [];
+			Array.from(editorDiv.children).forEach(function(item, index){
+				var i = map.push({type: item.firstChild.name, x: Math.round(item.offsetLeft/sizeConverter), y: Math.round(item.offsetTop/sizeConverter), width: Math.round(item.getBoundingClientRect().width/sizeConverter), height: Math.round(item.getBoundingClientRect().height/sizeConverter), breakable: item.getAttribute("data-breakable").toLowerCase() == 'true' ? true : false});
+				if(map[i-1].breakable){
+					map[i-1].id = index;
+					map[i-1].hp = parseInt(item.getAttribute("data-breakable"));
+				}
+				console.log(map);
+				console.log(JSON.stringify(map));
+			});
+		}
+		function clip(elem){
+			var topPos = elem.offsetTop;
+			var leftPos = elem.offsetLeft;
+			Array.from(editorDiv.children).forEach(function(item, index){
+				if(item.id !== elem.id){
+					var clipTop = elem.offsetTop-clipDistance<item.offsetTop && elem.offsetTop+clipDistance>item.offsetTop;
+					var clipTopToBottom = elem.offsetTop-clipDistance<item.offsetTop+item.offsetHeight && elem.offsetTop+clipDistance>item.offsetTop+item.offsetHeight;
+					console.log("clipTop: ", clipTop);
+					console.log("clipTopToBottom: ", clipTopToBottom);
+
+					var clipBottom = elem.offsetTop+elem.offsetHeight-clipDistance<item.offsetTop+item.offsetHeight && elem.offsetTop+elem.offsetHeight+clipDistance>item.offsetTop+item.offsetHeight;
+					var clipBottomToTop = elem.offsetTop+elem.offsetHeight-clipDistance<item.offsetTop && elem.offsetTop+elem.offsetHeight+clipDistance>item.offsetTop;
+					console.log("clipBottom: ", clipBottom);
+					console.log("clipBottomToTop: ", clipBottomToTop);
+
+					var clipLeft = elem.offsetLeft-clipDistance<item.offsetLeft && elem.offsetLeft+clipDistance>item.offsetLeft;
+					var clipLeftToRight = elem.offsetLeft-clipDistance<item.offsetLeft+item.offsetWidth && elem.offsetLeft+clipDistance>item.offsetLeft+item.offsetWidth;
+					console.log("clipLeft: ", clipLeft);
+					console.log("clipLeftToRight: ", clipLeftToRight);
+
+					var clipRight = elem.offsetLeft+elem.offsetWidth-clipDistance<item.offsetLeft+item.offsetWidth && elem.offsetLeft+elem.offsetWidth+clipDistance>item.offsetLeft+item.offsetWidth;
+					var clipRightToLeft = elem.offsetLeft+elem.offsetWidth-clipDistance<item.offsetLeft && elem.offsetLeft+elem.offsetWidth+clipDistance>item.offsetLeft;
+					console.log("clipRight: ", clipRight);
+					console.log("clipRightToLeft: ", clipRightToLeft);
+					if(clipTop){
+						topPos = item.offsetTop;
+					}else if(clipTopToBottom){
+						topPos = item.offsetTop+item.offsetHeight;
+					}else if(clipBottom){
+						topPos = item.offsetTop+item.offsetHeight-elem.offsetHeight;
+					}else if(clipBottomToTop){
+						topPos = item.offsetTop-elem.offsetHeight;
+					}
+					if(clipLeft){
+						leftPos = item.offsetLeft;
+					}else if(clipLeftToRight){
+						leftPos = item.offsetLeft+item.offsetWidth;
+					}else if(clipRight){
+						leftPos = item.offsetLeft+item.offsetWidth-elem.offsetWidth;
+					}else if(clipRightToLeft){
+						leftPos = item.offsetLeft-elem.offsetWidth;
+					}
+				}
+			});
+			elem.style.top = topPos + "px";
+			elem.style.left = leftPos + "px";
+			changeOption(elem)
+		}
+	</script>
+</body>
+</html>

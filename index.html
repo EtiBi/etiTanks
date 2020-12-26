@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name=”viewport” content=”width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no” />
+	<meta name="HandheldFriendly" content="true" />
+	<meta charset="UTF-8"> 
 	<title>Tanks!</title>
 	<link href="https://fonts.googleapis.com/css2?family=Chelsea+Market&display=swap" rel="stylesheet">
 	<script src="/socket.io/socket.io.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jscolor/2.0.4/jscolor.min.js" integrity="sha256-CJWfUCeP3jLdUMVNUll6yQx37gh9AKmXTRxvRf7jzro=" crossorigin="anonymous"></script>
 	<link rel="stylesheet" href="/main.css">
 </head>
 <body onload="loaded();">
@@ -14,9 +16,9 @@
 		<div id="playersCont">
 			<b>Players:</b>
 			<ul id="playersList">
-
 			</ul>
 		</div>
+		<div id="endTimer"></div>
 		<div id="gameFull" style="display: none;">
 			<h1>Sorry, this game is full</h1>
 		</div>
@@ -28,54 +30,152 @@
 			<p>
 				The host will start the game.
 			</p>
-			<label for="name">Name: </label><input type="text" value="Bob" oninput="updateName(this.value);" name="name" id="nameInput">
-			<br>
-			<label for="color">Color: </label><input type="color" id="colorInput" onchange="updateColor(this.value)" value="#0000ff">
+			<div class="nameContainer">
+				<label for="name">Name: </label><input placeholder="Please input a name" type="text" value="Bob" oninput="updateName(this.value);" name="name" id="nameInput">
+			</div>
+			<label for="color">Color: </label><input size="6" class="jscolor {onFineChange:'changeTextColor(this)'}" id="colorInput" onchange="updateColor(this.value)" value="#0000ff">
+			<div id="chatBox">
+				<div id="messages">
+				</div>
+				<form id="messageBar" onsubmit="sendMessageForm(this);">
+					<input type="text" id="messageInput" placeholder="Say hi!" autocomplete="off"><button id="sendMessage">Send</button>
+				</form>
+			</div>
 		</div>
 		<div id="hostOnly" style="display: none;">
 			<h3>You are host!</h3>
+			<div>
+				<label for="lightOption">Lights?: </label>
+				<input type="checkbox" class="option" name="lightOption" id="lightOption">
+			</div>
+			<div>
+				<label for="bobbingOption">View bobbing?: </label>
+				<input type="checkbox" class="option" name="bobbingOption" id="bobbingOption">
+			</div>
 			<button onclick="startGame();">Start game</button>
 		</div>
 	</div>
+	<div class="circleController" style="display: none;">
+		<div class="joystick"></div>
+	</div>
+	<div class="circleController" style="display: none;">
+		<div class="joystick"></div>
+	</div>
 	<script>
-		var socket = io("ws://192.168.2.205:2828", {transports: ['websocket']});
+		var socket = io("wss://bibaud.ddns.net:2828", {transports: ['websocket']});
 		var canvas = document.querySelector("#gameArea");
 		var ctx = canvas.getContext("2d");
+		ctx.imageSmoothingQuality = "low";
+		var tankTypes = [{name: "sprayer", bulletSize: 3}, {name: "sniper", bulletSize: 6}]
 		var sizeConverter = 1;
+		var onlyLights = false;
 		const wallTextureSize = 150;
-		var woodWall = new Image();
-		woodWall.src = '/woodWall.jpg';
-		var bushTexture = new Image();
-		bushTexture.src = '/bush-small.png';
-		var groundTexture = new Image();
-		groundTexture.src = '/groundTexture.jpg';
-		var wallTexture = new Image(wallTextureSize, wallTextureSize);
-		wallTexture.src = '/wall.jpg';
+		var images = [{name:'woodWall', url: '/woodWall.jpg'}, {name:'bushTexture', url: '/bush-small.png'}, {name:'groundTexture', url:'/groundTexture.jpg'}, {name:'wallTexture', url: '/wall.jpg'}, {name:'sprayerTank', url: '/tanks/sprayer/tank.png'}, {name:'sprayerTurret', url: '/tanks/sprayer/turret.png'}, {name:'sniperTank', url: '/tanks/sniper/tank.png'}, {name:'sniperTurret', url: '/tanks/sniper/turret.png'}, {name:'crate', url: '/crate.jpg'}, {name:'bullet', url: '/bullet.png'}, {name: "heal", url: "/powerUps/heal.png"}, {name: "speed", url: "/powerUps/speed.png"}];
+		images.forEach(item=>{
+			item.image = new Image();
+			item.image.src = item.url;
+		});
 		var tankSize = 50;
-		var tankImg = new Image(tankSize, tankSize);
-		tankImg.src = '/tank.png';
-		var turretImg = new Image();
-		turretImg.src = '/turret.png';
 		var map;
 		var previousY = 0;
 		var previousX = 0;
+		var yourCurrentTank = 0
+		var linesToDraw = [];
+		var controlLines = [];
+		var powerUps = [];
+		var circleController = document.querySelectorAll(".circleController");
 		window.addEventListener("resize", resize);
+		function setCookie(cname, cvalue, exdays) {
+			var d = new Date();
+			d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
+			var expires = "expires="+d.toUTCString();
+			document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+		}
+		function getCookie(cname) {
+			var name = cname + "=";
+			var ca = document.cookie.split(';');
+			for(var i = 0; i < ca.length; i++) {
+				var c = ca[i];
+				while (c.charAt(0) == ' ') {
+				c = c.substring(1);
+			}
+			if (c.indexOf(name) == 0) {
+				return c.substring(name.length, c.length);
+			}
+		}
+			return "";
+		}
+		function checkCookie(cname) {
+			var checkingCookie = getCookie(cname);
+			if (checkingCookie != "") {
+				return true;
+			} else {
+				return false;
+			}
+		}
+		function changeTextColor(color){
+			document.querySelector("#nameInput").style.color = "#"+color;
+		}
 		function resize(){
-			canvas.width = window.innerWidth;
-			canvas.height = window.innerWidth/2;
-			sizeConverter = window.innerWidth/4000;
+			var currSizer = window.innerHeight<window.innerWidth/2?window.innerHeight*2:window.innerWidth;
+			canvas.width = currSizer;
+			canvas.height = currSizer/2;
+			sizeConverter = currSizer/4000;
 			tankSize = 70 * sizeConverter;
 		}
 		function loaded(){
 			resize();
+			if(checkCookie("saveName")){
+				document.querySelector("#nameInput").value = getCookie("saveName")
+				updateName(getCookie("saveName"));
+			}
 			//drawWall(0, 0, window.innerWidth, canvas.heightds
 		}
-		var playerPos;
+		function sendMessageForm(form){
+			event.preventDefault();
+			var message = form.querySelector("input").value;
+			socket.emit("sendMessage", message);
+			form.querySelector("input").value = "";
+		}
+		socket.on("receiveMessage", function(msg){
+			createMessage(msg.from, msg.content, msg.color, msg.bgColor);
+		});
+		function createMessage(from, msg, color, bgColor){
+			var messagesBox = document.querySelector("#messages");
+			var div = document.createElement("div");
+			var spanName = document.createElement("span");
+			spanName.style.color = color;
+			spanName.style.fontWeight = "bold";
+			spanName.innerHTML = from+ ": "
+			div.append(spanName)
+			var spanMsg = document.createElement("span");
+			spanMsg.innerHTML = msg;
+			spanMsg.style.color = "black";
+			div.append(spanMsg)
+			div.classList.add("message");
+			var gonnaScroll = false;
+			if(messagesBox.scrollHeight-messagesBox.scrollTop-messagesBox.offsetHeight == -2){
+				gonnaScroll = true;
+			}
+			messagesBox.append(div);
+			if(gonnaScroll){
+				//$("#chatMessages").stop().animate({ scrollTop: $("#chatMessages")[0].scrollHeight}, 500);
+				messagesBox.scrollTop = messagesBox.scrollHeight;
+			}
+		}
+		var playerPos = {};
+		socket.on("onlyLights", x=>{onlyLights = x});
 		socket.on("removeFromMap", function(removeItems){
-			console.log("hi", removeItems)
 			removeItems.forEach(function(item, index){
 				map = map.filter(x=>x.id!==item.id);
 			});
+		});
+		socket.on("endTimer", function(time){
+			document.querySelector("#endTimer").innerHTML = "Game finished<br>"+time;
+		});
+		socket.on("resetAll", function(){
+			document.querySelector("#endTimer").innerText = "";
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
 		});
 		socket.on("died", function(item, index){
 			window.removeEventListener("keydown", keyDownHandler);
@@ -85,7 +185,6 @@
 			window.removeEventListener("mousemove", rotateTurret);
 		});
 		socket.on("newPlayersPos", function(players, bullets){
-			//console.log("players: ", players);
 			updateGame(players, bullets)
 		});
 		function updateGame(players, bullets){
@@ -95,20 +194,31 @@
 				playerPos = {...players};
 			}
 			var fakePlayers = {...players};
+			playerPos = fakePlayers;
 			Object.keys(players).forEach(element => {
-				//console.log("Math.atan2: ", Math.atan2(playerPos[element].yPos-players[element].yPos, playerPos[element].xPos-players[element].xPos));
-				drawTank(players[element].xPos*sizeConverter, players[element].yPos*sizeConverter, players[element].tankRotation, players[element].turretRotation, players[element].name, players[element].color, players[element].health, players[element].maxHealth);
+				drawTank(players[element].tankType, players[element].xPos*sizeConverter, players[element].yPos*sizeConverter, players[element].tankRotation, players[element].turretRotation, players[element].name, players[element].color, players[element].health, players[element].maxHealth);
 			});
+			controlLines.forEach((item, index)=>{
+				if(Date.now() < item.hideTime || !item.hide){
+					drawLines(linesToDraw[index])
+				}
+			})
+			// linesToDraw.forEach(item=>{
+			// 	drawLines(item);
+			// })
 			bullets.forEach(function(item, index){
-				//console.log("item: ", item);
-				ctx.beginPath()
-				ctx.fillStyle = "#ff0000";
-				ctx.arc(item.xPos*sizeConverter, item.yPos*sizeConverter, 3, 0, Math.PI*2);
-				ctx.fill();
+				ctx.save();
+				ctx.beginPath();
+				ctx.translate(item.xPos*sizeConverter, item.yPos*sizeConverter)
+				ctx.rotate(item.angle+Math.PI/2);
+				//ctx.fillStyle = "#ff0000";
+				ctx.drawImage(images.find(x=>x.name=="bullet").image, -item.bs*sizeConverter/2, -item.bs*sizeConverter/2, item.bs*sizeConverter*2, item.bs*sizeConverter*2)
+				//ctx.arc(item.xPos*sizeConverter, item.yPos*sizeConverter, item.bs*sizeConverter, 0, Math.PI*2);
+				//ctx.fill();
 				ctx.closePath();
+				ctx.restore();
 			});
 			parseMapDataTop(map);
-			playerPos = fakePlayers;
 		}
 		socket.on("gameFull", function(){
 			document.querySelector("#gameFull").style.display = "block";
@@ -117,7 +227,18 @@
 			document.querySelector("#userInfo").style.display = "block";
 		});
 		function startGame(){
-			socket.emit("startGame");
+			var options = {};
+			for(const element of document.querySelectorAll(".option")){
+				switch(element.type){
+					case "checkbox":
+						options[element.name] = element.checked;
+						break;
+					case "text":
+						options[element.name] = element.value;
+						break;
+				}
+			}
+			socket.emit("startGame", options);
 		}
 		socket.on("host", function(){
 			document.querySelector("#hostOnly").style.display = "block";
@@ -126,20 +247,31 @@
 			document.querySelector("#gameStarted").style.display = "block";
 		});
 		function updateColor(newColor){
-			console.log("newColor: ", newColor);
 			socket.emit("changeColor", newColor);
 		}
 		function updateName(newName){
+			setCookie("saveName", newName, 1000);
 			socket.emit("changeName", newName);
 		}
 		socket.on("updatePlayers", function(newPlayers){
 			document.querySelector("#playersList").innerHTML = "";
 			Object.values(newPlayers).forEach(element => {
-				document.querySelector("#playersList").innerHTML += `<li style="color: ${element.color};">${element.name}</li>`;
+				var c = element.color.substring(1);	  // strip #
+				var rgb = parseInt(c, 16);   // convert rrggbb to decimal
+				var r = (rgb >> 16) & 0xff;  // extract red
+				var g = (rgb >>  8) & 0xff;  // extract green
+				var b = (rgb >>  0) & 0xff;  // extract blue
+
+				var luma = 0.2126 * r + 0.7152 * g + 0.0722 * b; // per ITU-R BT.709
+
+				if (luma < 40) {
+					document.querySelector("#playersList").innerHTML += `<li style="color: ${element.color};text-shadow: -1px -1px 0 whitesmoke , 1px -1px 0 whitesmoke , -1px 1px 0 whitesmoke , 1px 1px 0 whitesmoke ;">${element.name}</li>`;
+				}else{
+					document.querySelector("#playersList").innerHTML += `<li style="color: ${element.color};">${element.name}</li>`;
+				}
 			});
 		});
 		socket.on("startGame", function(mapInfo){
-			console.log("start");
 			document.querySelector("#userInfo").style.display = "none";
 			document.querySelector("#hostOnly").style.display = "none";
 			map = mapInfo;
@@ -150,58 +282,74 @@
 			window.addEventListener("mousedown", mouseDownHandler);
 			window.addEventListener("mouseup", mouseUpHandler);
 			window.addEventListener("mousemove", rotateTurret);
+			Array.from(circleController).forEach((x, y)=>{
+				new joystick(x, y)
+			})
 		});
+		socket.on("notEnoughPlayers", function(){
+			alert("There aren't enough players")
+		});
+		var moveKeysDown = 0;
+		var rotationSendInt;
 		function keyDownHandler(event){
-			//console.log("event: ", event);
 			switch(event.code){
 				case "ArrowLeft":
 				case "KeyA":
 					if(!event.repeat){
 						socket.emit("moveLeft", true);
-					}
-					var yourTank = playerPos[socket.id];
-					//console.log(event)
-					if(yourTank != undefined){
-						var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-previousY, yourTank.xPos*sizeConverter-tankSize*1.865/2-previousX)-Math.PI/2;
-						socket.emit("changeTurretAngle", calcAngle);
+						moveKeysDown++;
 					}
 					break;
 				case "ArrowUp":
 				case "KeyW":
 					if(!event.repeat){
 						socket.emit("moveForward", true);
-					}
-					var yourTank = playerPos[socket.id];
-					//console.log(event)
-					if(yourTank != undefined){
-						var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-previousY, yourTank.xPos*sizeConverter-tankSize*1.865/2-previousX)-Math.PI/2;
-						socket.emit("changeTurretAngle", calcAngle);
+						moveKeysDown++;
 					}
 					break;
 				case "ArrowDown":
 				case "KeyS":
 					if(!event.repeat){
 						socket.emit("moveBack", true);
-					}
-					var yourTank = playerPos[socket.id];
-					//console.log(event)
-					if(yourTank != undefined){
-						var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-previousY, yourTank.xPos*sizeConverter-tankSize*1.865/2-previousX)-Math.PI/2;
-						socket.emit("changeTurretAngle", calcAngle);
+						moveKeysDown++;
 					}
 					break;
 				case "ArrowRight":
 				case "KeyD":
 					if(!event.repeat){
 						socket.emit("moveRight", true);
-					}
-					var yourTank = playerPos[socket.id];
-					//console.log(event)
-					if(yourTank != undefined){
-						var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-previousY, yourTank.xPos*sizeConverter-tankSize*1.865/2-previousX)-Math.PI/2;
-						socket.emit("changeTurretAngle", calcAngle);
+						moveKeysDown++;
 					}
 					break;
+				case "KeyE":
+					yourCurrentTank ++;
+					if(yourCurrentTank>tankTypes.length-1){
+						yourCurrentTank = 0;
+					}
+					socket.emit("setTankType", tankTypes[yourCurrentTank].name);
+					break;
+				case "KeyQ":
+					yourCurrentTank --;
+					if(yourCurrentTank<0){
+						yourCurrentTank = tankTypes.length-1;
+					}
+					socket.emit("setTankType", tankTypes[yourCurrentTank].name);
+					break;
+			}
+			if(!event.repeat){
+				if(moveKeysDown>0){
+					rotationSendInt = setInterval(sendMousePos, 200);
+				}
+			}
+		}
+		function sendMousePos(){
+			var yourTank = playerPos[socket.id];
+			if(yourTank != undefined){
+				var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-previousY, yourTank.xPos*sizeConverter-tankSize*1.865/2-previousX)-Math.PI/2;
+				socket.emit("changeTurretAngle", calcAngle);
+			}
+			if(moveKeysDown == 0){
+				clearInterval(rotationSendInt);
 			}
 		}
 		function keyUpHandler(event){
@@ -209,19 +357,26 @@
 				case "ArrowLeft":
 				case "KeyA":
 					socket.emit("moveLeft", false);
+					moveKeysDown--;
 					break;
 				case "ArrowUp":
 				case "KeyW":
 					socket.emit("moveForward", false);
+					moveKeysDown--;
 					break;
 				case "ArrowDown":
 				case "KeyS":
 					socket.emit("moveBack", false);
+					moveKeysDown--;
 					break;
 				case "ArrowRight":
 				case "KeyD":
 					socket.emit("moveRight", false);
+					moveKeysDown--;
 					break;
+			}
+			if(moveKeysDown == 0){
+				clearInterval(rotationSendInt);
 			}
 		}
 		function mouseDownHandler(event){
@@ -232,13 +387,10 @@
 		}
 		function rotateTurret(event){
 			var yourTank = playerPos[socket.id];
-			//console.log(event)
 			previousX = event.clientX;
 			previousY = event.clientY;
 			if(yourTank != undefined){
-				
 				var calcAngle = Math.atan2(yourTank.yPos*sizeConverter-tankSize/2-event.clientY, yourTank.xPos*sizeConverter-tankSize*1.865/2-event.clientX)-Math.PI/2;
-				//console.log(calcAngle)
 				socket.emit("changeTurretAngle", calcAngle);
 			}
 		}
@@ -246,13 +398,16 @@
 			mapData.forEach(function(item, index){
 				switch(item.type){
 					case "bg":
-						drawTexture(groundTexture, 0, 0, canvas.width, canvas.height, 225)
+						drawTexture(images.find(x=>x.name == "groundTexture").image, 0, 0, canvas.width, canvas.height, 225)
+						break;
+					case "crate":
+						ctx.drawImage(images.find(x=>x.name == "crate").image, item.x*sizeConverter, item.y*sizeConverter, item.width*sizeConverter, item.height*sizeConverter)
 						break;
 					case "wall":
 						drawWall(item.x*sizeConverter, item.y*sizeConverter, item.width*sizeConverter, item.height*sizeConverter);
 						break;
 					case "woodWall":
-						drawTexture(woodWall, item.x*sizeConverter, item.y*sizeConverter, item.width*sizeConverter, item.height*sizeConverter, 100);
+						drawTexture(images.find(x=>x.name == "woodWall").image, item.x*sizeConverter, item.y*sizeConverter, item.width*sizeConverter, item.height*sizeConverter, 100);
 						break;
 				}
 			});
@@ -261,19 +416,41 @@
 			mapData.forEach(function(item, index){
 				switch(item.type){
 					case "bush":
-						ctx.drawImage(bushTexture, (item.x-200)*sizeConverter, (item.y-200)*sizeConverter, 400*sizeConverter, 400*sizeConverter);
+						ctx.drawImage(images.find(x=>x.name == "bushTexture").image, (item.x-200)*sizeConverter, (item.y-200)*sizeConverter, 400*sizeConverter, 400*sizeConverter);
 						break;
 				}
 			});
+			var yourTank = playerPos[socket.id];
+			if(onlyLights &&yourTank!==undefined){
+			yourTank.turretRotation = yourTank.turretRotation-Math.PI/2
+				var tempPath = new Path2D();
+				tempPath.moveTo(0, 0);
+				tempPath.lineTo(canvas.width, 0);
+				tempPath.lineTo(canvas.width, canvas.height);
+				tempPath.lineTo(0, canvas.height);
+				tempPath.lineTo(0, 0);
+				var center = [yourTank.xPos*sizeConverter-tankSize, yourTank.yPos*sizeConverter-tankSize/4*1.865];
+				tempPath.moveTo(center[0], center[1]);
+				tempPath.lineTo(Math.cos(yourTank.turretRotation-0.2)*800*sizeConverter+center[0], Math.sin(yourTank.turretRotation-0.2)*800*sizeConverter+center[1]);
+				tempPath.lineTo(Math.cos(yourTank.turretRotation+0.2)*800*sizeConverter+center[0], Math.sin(yourTank.turretRotation+0.2)*800*sizeConverter+center[1]);
+				tempPath.moveTo(center[0], center[1]);
+				tempPath.moveTo(0, 0);
+				ctx.fillStyle = 'black';
+				ctx.fill(tempPath, 'evenodd');
+			}
+			drawPowers(powerUps);
 		}
+		socket.on("powerUpsChanged", function(newPowerUps){
+			powerUps = newPowerUps;
+			drawPowers(powerUps);
+		})
 		function drawWall(xPos, yPos, width, height){// width/texturesize-i
 			//drawTexture(wallTexture, 0, 0, width, height, wallTextureSize)
-			//console.log("drawTexture("+wallTexture+", 0, 0, "+ width+", "+ height+","+ wallTextureSize,")")
 			for(var i = 0;i<Math.ceil(width/wallTextureSize);i++){
 				for(var j = 0;j<Math.ceil(height/wallTextureSize);j++){
 					var calcW = i+1!==Math.ceil(width/wallTextureSize)?wallTextureSize:(width-i*wallTextureSize);
 					var calcH = j+1!==Math.ceil(height/wallTextureSize)?wallTextureSize:(height-j*wallTextureSize);
-					ctx.drawImage(wallTexture, 0, 0, calcW, calcH, xPos+wallTextureSize*i, yPos+wallTextureSize*j, calcW, calcH);
+					ctx.drawImage(images.find(x=>x.name == "wallTexture").image, 0, 0, calcW, calcH, xPos+wallTextureSize*i, yPos+wallTextureSize*j, calcW, calcH);
 				}
 			}
 		}
@@ -286,11 +463,16 @@
 				}
 			}
 		}
-		function drawTank(xPos, yPos, tankRotation, turretRotation, name, color, health, maxHealth){
+		function drawPowers(powers){
+			powers.forEach(function(item, index){
+				if(item.power !== null){
+					ctx.drawImage(images.find(x=>x.name==item.power).image, item.x*sizeConverter, item.y*sizeConverter, 100*sizeConverter, 100*sizeConverter);
+				}
+			});
+		}
+		function drawTank(tankType, xPos, yPos, tankRotation, turretRotation, name, color, health, maxHealth){
 			var percentage = health/maxHealth;
-			console.log("percentage: ", percentage);
 			var barLength = percentage*40;
-			console.log("barLength: ", barLength);
 			ctx.fillStyle = "red";
 			ctx.fillRect(xPos-tankSize-20, yPos+5, 40, 3);
 			ctx.fillStyle = "green";
@@ -307,36 +489,151 @@
 			//ctx.arc(-tankSize*1.865/2, -tankSize/2, 10, 0, Math.PI*2);
 			//ctx.fillStyle = "red";
 			//ctx.fill();
-			ctx.drawImage(tankImg, -tankSize*1.865/2, -tankSize/2, tankSize*1.865, tankSize);
+			ctx.drawImage(images.find(x=>x.name == tankType+"Tank").image, -tankSize*1.865/2, -tankSize/2, tankSize*1.865, tankSize);
 			ctx.restore();
 			ctx.save();
 			//ctx.endPath()
-			
 			ctx.translate(xPos-tankSize*1.865/1.8, yPos-tankSize/2);
-
 			ctx.rotate(turretRotation);
-			ctx.drawImage(turretImg, -tankSize/2, -tankSize*(793/386)/2-10, tankSize, tankSize*(793/386));
+			ctx.drawImage(images.find(x=>x.name == tankType+"Turret").image, -tankSize/2, -tankSize*(793/386)/2-10, tankSize, tankSize*(793/386));
 			ctx.restore();
 		}
 		document.querySelector(".main").onclick = function(event){
 			console.log("X: ", event.clientX/sizeConverter, "y: ", event.clientY/sizeConverter)
 		}
-		socket.on("drawLines", function(){
-			drawLines(arguments);
+		socket.on("drawLines", function(lines, hide=false, time=1000){
+			linesToDraw.push(lines);
+			controlLines.push({timeCreated: Date.now(), hide: hide, hideTime: Date.now()+time});
 		})
-		function drawLines(){
-			console.log(Object.values(arguments[0])[0])
-			var poses = Object.values(arguments[0])[0];
+		function drawLines(lines){
 			ctx.beginPath();
-			ctx.moveTo(poses[0][0]*sizeConverter, poses[0][1]*sizeConverter);
+			ctx.moveTo(lines[0][0]*sizeConverter, lines[0][1]*sizeConverter);
 			ctx.strokeStyle = "#ff0000";
 			ctx.lineWidth = 1;
-			poses.forEach(function(item, index){
-				console.log(item[0]*sizeConverter," : ", item[1]*sizeConverter)
+			lines.forEach(function(item, index){
 				ctx.lineTo(item[0]*sizeConverter, item[1]*sizeConverter);
-				
 			});ctx.stroke();
 			ctx.closePath();
+		}
+		class joystick{
+			constructor(stickElement, detectSide){
+				this.stickElement = stickElement;
+				console.log("this.stickElement: ", this.stickElement);
+				this.detectSide = detectSide;
+				var keepThis = this;
+				document.body.addEventListener("touchstart", function(){keepThis.startTouch(keepThis)})
+				document.body.addEventListener("touchmove", function(){keepThis.moveTouch(keepThis)})
+				document.body.addEventListener("touchend", function(){keepThis.endTouch(keepThis)})
+				document.body.addEventListener("touchcancel", function(){keepThis.endTouch(keepThis)})
+				console.log("hey")
+			}
+			startTouch(keepThis){
+				console.log("hi")
+				for(var i = 0;i<event.touches.length;i++){
+					if(event.touches[i].clientX<document.body.offsetWidth/2){
+						socket.emit("setMoveJoystick", true)
+					}else if(event.touches[i].clientX>document.body.offsetWidth/2){
+						socket.emit("shooting", true);
+					}
+					if(keepThis.detectSide?event.touches[i].clientX>document.body.offsetWidth/2:event.touches[i].clientX<document.body.offsetWidth/2){
+						console.log(keepThis);
+						keepThis.stickElement.style.display = "block";
+						keepThis.stickElement.style.left = (event.touches[i].clientX-keepThis.stickElement.offsetWidth/2)+"px";
+						keepThis.stickElement.style.top = (event.touches[i].clientY-keepThis.stickElement.offsetHeight/2)+"px";
+						break;
+					}
+				}
+			}
+			moveTouch(keepThis){
+				for(var i = 0;i<event.touches.length;i++){
+					if(keepThis.detectSide?event.touches[i].clientX>document.body.offsetWidth/2:event.touches[i].clientX<document.body.offsetWidth/2){
+						console.log(event)
+						var mouseX = event.touches[i].clientX;
+						var mouseY = event.touches[i].clientY;
+						var angle = Math.atan2((keepThis.stickElement.offsetTop+keepThis.stickElement.offsetHeight/2)-mouseY, (keepThis.stickElement.offsetLeft+keepThis.stickElement.offsetWidth/2)-mouseX);
+						keepThis.stickElement.style.transform = "rotate("+(angle-Math.PI/2)+"rad)";
+						if(keepThis.detectSide == 1){
+							socket.emit("changeTurretAngle", angle-Math.PI/2);
+						}else{
+							socket.emit("setMoveAngleJoystick", angle);
+						}
+						break;
+					}
+				}
+			}
+			endTouch(keepThis){
+				
+				if(keepThis.detectSide == 1 && event.changedTouches[0].clientX<document.body.offsetWidth/2){
+					socket.emit("shooting", false);
+					keepThis.stickElement.style.display = "none";
+				}else if(event.changedTouches[0].clientX<document.body.offsetWidth/2){
+					socket.emit("setMoveJoystick", false);
+					keepThis.stickElement.style.display = "none";
+				}
+			}
+		}
+		var currentController = 0;
+		var intervalId = null
+		window.addEventListener("gamepadconnected", function(e) {
+			var gp = navigator.getGamepads()[e.gamepad.index];
+			console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
+			gp.index, gp.id,
+			gp.buttons.length, gp.axes.length);
+			intervalId = setInterval(handleController, 100);
+		});
+		window.addEventListener("gamepaddisconnected", function(e) {
+			clearInterval(intervalId)
+		});
+		var previousControllerTurret = null;
+		var previousControllerTank = null;
+		var previousControllerTankMoving = false;
+		var previousControllerShooting = null;
+		var previousControllerSwitchTanks = null;
+		var yAxisTurret = 2;
+		function handleController(timestamp) {
+			if(typeof navigator.getGamepads != "function"){
+				console.error("GP not found!!!")
+				return
+			}
+			var gp = navigator.getGamepads()[currentController];
+			if(gp){
+				if(gp.axes[3] != 0){
+					yAxisTurret = 3;
+				}else if(gp.axes[5] != 0){
+					yAxisTurret = 5;
+				}
+				//console.log("gp.axes[yAxisTurret] ", gp.axes[2])
+				var currTurrentAngle = Math.atan2(gp.axes[yAxisTurret], gp.axes[2])+Math.PI/2;
+				if(currTurrentAngle != previousControllerTurret){
+					previousControllerTurret = currTurrentAngle;
+					socket.emit("changeTurretAngle", previousControllerTurret);
+				}
+				//console.log(`Math.hypot(...gp.axes.slice(0, 2)): `, Math.hypot(...gp.axes.slice(0, 2)))
+				if(Math.hypot(...gp.axes.slice(0, 2))<0.5){
+					if(previousControllerTankMoving){
+						socket.emit("setMoveJoystick", false);
+						previousControllerTankMoving = false;
+					}
+				}else{
+					if(!previousControllerTankMoving){
+						socket.emit("setMoveJoystick", true);
+						previousControllerTankMoving = true;
+					}
+					var currTankAngle = Math.atan2(...gp.axes.slice(0, 2).reverse())-Math.PI;
+					//console.log(`previousControllerTank: `, previousControllerTank);
+					if(currTankAngle != previousControllerTank){
+						previousControllerTank = currTankAngle;
+						socket.emit("setMoveAngleJoystick", previousControllerTank);
+					}
+				}
+				if(gp.buttons[7].pressed!=previousControllerShooting){
+					previousControllerShooting = gp.buttons[7].pressed;
+					
+					socket.emit("shooting", previousControllerShooting)
+				}
+			}else{
+				console.error("GP not found")
+			}
 		}
 	</script>
 </body>

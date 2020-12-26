@@ -1,0 +1,32 @@
+body{
+	margin: 0px;
+	padding: 0px;
+	height: 100vh;
+	overflow: hidden;
+}
+#editor{
+	background-color: black;
+}
+#bottomBar{
+	display: grid;
+	grid-template-columns: 70% 30%;
+}
+#tools{
+	display: flex;
+	flex-flow: row wrap;
+}
+.tool{
+	border: 3px solid gray;
+	margin: 5px;
+	padding: 3px;
+	line-height: 100px;
+}
+.tool img{
+	vertical-align: middle;
+}
+.selected{
+	outline: 1px solid blue;
+}
+img{
+	display: block;
+}
