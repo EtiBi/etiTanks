@@ -13,6 +13,6 @@
     "he": "^1.2.0",
     "http": "0.0.1-security",
     "lineclip": "^1.1.5",
-    "socket.io": "^2.4.0"
+    "socket.io": "^2.5.0"
   }
 }
